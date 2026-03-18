@@ -45,3 +45,16 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Jibni Backend running on port', PORT));
+
+const { dispatchCourse } = require('./dispatch');
+
+// Endpoint dispatch course
+app.post('/dispatch-course', async (req, res) => {
+  try {
+    const { courseId, courseData } = req.body;
+    dispatchCourse(courseId, courseData);
+    res.json({ dispatching: true });
+  } catch(e) {
+    res.status(400).json({ error: e.message });
+  }
+});
