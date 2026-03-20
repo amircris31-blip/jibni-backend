@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
+const Anthropic = require("@anthropic-ai/sdk").default;
 const app = express();
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 app.use(cors());
 app.use(express.json());
@@ -71,6 +73,96 @@ app.post("/plaque/add", (req, res) => {
   PLATE_DB[fmt] = { brand, model, year, color, seats: parseInt(seats) };
   console.log("Plaque ajoutee:", fmt, PLATE_DB[fmt]);
   res.json({ success: true, plate: fmt });
+});
+
+// POST /agent - Agent Claude toujours disponible pour les questions vehicules
+app.post("/agent", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message) return res.status(400).json({ error: "Message requis" });
+
+  const tools = [
+    {
+      name: "recherche_plaque",
+      description: "Recherche les informations d'un vehicule par son numero de plaque d'immatriculation francaise",
+      input_schema: {
+        type: "object",
+        properties: {
+          plaque: {
+            type: "string",
+            description: "Numero de plaque d'immatriculation (ex: AB-123-CD ou HH183VB)"
+          }
+        },
+        required: ["plaque"]
+      }
+    }
+  ];
+
+  const messages = [
+    ...history,
+    { role: "user", content: message }
+  ];
+
+  try {
+    let response = await anthropic.messages.create({
+      model: "claude-opus-4-6",
+      max_tokens: 4096,
+      thinking: { type: "adaptive" },
+      system: "Tu es un assistant specialise pour l'application Jibni, un service de verification de plaques d'immatriculation. Tu aides les utilisateurs a obtenir des informations sur les vehicules a partir de leurs plaques. Reponds en francais. Tu as acces a un outil de recherche de plaque que tu peux utiliser quand necessaire.",
+      tools,
+      messages
+    });
+
+    // Boucle agentique: traitement des appels d'outils
+    while (response.stop_reason === "tool_use") {
+      const toolUseBlocks = response.content.filter(b => b.type === "tool_use");
+      messages.push({ role: "assistant", content: response.content });
+
+      const toolResults = [];
+      for (const toolUse of toolUseBlocks) {
+        let result;
+        if (toolUse.name === "recherche_plaque") {
+          const plate = formatPlate(toolUse.input.plaque);
+          if (PLATE_DB[plate]) {
+            result = JSON.stringify({ success: true, plaque: plate, ...PLATE_DB[plate] });
+          } else {
+            result = JSON.stringify({ success: false, message: "Plaque non trouvee: " + plate });
+          }
+        } else {
+          result = JSON.stringify({ error: "Outil inconnu" });
+        }
+        toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
+      }
+
+      messages.push({ role: "user", content: toolResults });
+
+      response = await anthropic.messages.create({
+        model: "claude-opus-4-6",
+        max_tokens: 4096,
+        thinking: { type: "adaptive" },
+        system: "Tu es un assistant specialise pour l'application Jibni, un service de verification de plaques d'immatriculation. Tu aides les utilisateurs a obtenir des informations sur les vehicules a partir de leurs plaques. Reponds en francais. Tu as acces a un outil de recherche de plaque que tu peux utiliser quand necessaire.",
+        tools,
+        messages
+      });
+    }
+
+    const textBlock = response.content.find(b => b.type === "text");
+    const reply = textBlock ? textBlock.text : "";
+
+    messages.push({ role: "assistant", content: response.content });
+
+    // Retourner l'historique sans les blocs internes (thinking, tool_use, tool_result)
+    const cleanHistory = messages.map(m => ({
+      role: m.role,
+      content: Array.isArray(m.content)
+        ? m.content.filter(b => b.type === "text").map(b => b.text).join("")
+        : m.content
+    })).filter(m => m.content);
+
+    res.json({ success: true, reply, history: cleanHistory });
+  } catch (e) {
+    console.error("Agent error:", e.message);
+    res.status(500).json({ error: "Erreur agent: " + e.message });
+  }
 });
 
 // Health check
