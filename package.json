@@ -10,7 +10,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "imapflow": "^1.2.16",
+    "nodemailer": "^8.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

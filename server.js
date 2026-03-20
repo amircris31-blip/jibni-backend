@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const Anthropic = require("@anthropic-ai/sdk").default;
+const { runEmailAgent } = require("./emailAgent");
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -162,6 +163,24 @@ app.post("/agent", async (req, res) => {
   } catch (e) {
     console.error("Agent error:", e.message);
     res.status(500).json({ error: "Erreur agent: " + e.message });
+  }
+});
+
+// POST /email-agent - Agent email: repond et organise la boite mail
+app.post("/email-agent", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message) return res.status(400).json({ error: "Message requis" });
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return res.status(500).json({ error: "Variables EMAIL_USER et EMAIL_PASS requises" });
+  }
+
+  try {
+    const result = await runEmailAgent(message, history);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error("Email agent error:", e.message);
+    res.status(500).json({ error: "Erreur agent email: " + e.message });
   }
 });
 
