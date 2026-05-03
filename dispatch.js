@@ -1,11 +1,12 @@
+require('dotenv').config();
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: "jibni-3",
-      clientEmail: "firebase-adminsdk-fbsvc@jibni-3.iam.gserviceaccount.com",
-      privateKey: "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDeXv/Dr1nosgr4\n/pgEr8Mhlzlpva+QW0dK8g5iMP/wGyh2fFL4/XXo1UEKBJ1kHuBcr/+KUCwBqReC\nL73QffAHDPPHefF1HGxFPmyhzOnVZMBMlllSwiWYZAZ6j9mHbyT2okx7LxEipUUs\nCknQV/ahYg45r6h2TVKL1cryH6I4iz9yKosspcNtGeCLzMbaoaFpY64S0sWJDyKT\nwjDJzxd985ZwumN5iM/nqlxlWSpsKg7qlGjx+y881Quena2WQMesNIOMIShw0ueH\n9irSDagq/sskXF8uBg2hfPMsHksdk+xazc1OjG6xBDxGyZ+y+/n46eqAW5e0IYJa\nX1gBdx3xAgMBAAECggEAG9zr78VUPvG2KcJe4nFygg48iakUq0Igsf2X+0o3+4ov\nnP8Rd3Ts1gaIjnyLCx1KUBrWamqGxRN+qFeakVoCXiPLlPJM5LdxwpBilLiEETK9\nXKtXGGVOyCQ6YpeNMmjlCQlHi4TXgQ+T1gOZAaPP+aM7dJNzyJUCM5bPhdycWzit\npyHncso7mys64BJtUdeK0DNJeH0zSpZSW0KHPCyBZf/4VMHQ/htToPPup/OjgccZ\nOquz2gzL9LbqMDh5Sq/EN7CdAu7uX6E5Sxt0+vfGgd6BUmAgGhYfAHkJ3UIz/c/N\n1euTN+LRzjO0+z8NGLGBLbXxxa+r+awjC8THyCiiBQKBgQDyRKeOcghANzvgcQci\nuQS0oVJ3kVfxz5WegbVSL86zEMn9nREgRYFvzoI23jTpY3jh30oQE11dD9jzdscM\nElbR7BHFD4Q7EljqZnryF44ighvIRti+TBGN1LaiMSL1pKH3crnDYHz3flNlGt0S\nYH5RpfIKwZi1UnJC1jbMG9bgpQKBgQDq+aKMmkQHRSXhY1BzU5UwUHI9QRswgejn\nxdzQTTXc2Mw3z7iDysfHdx+p5GBaRcigg955RJmwrZHEjloQTEHYRq0PgjvqyZUb\nAmRoG9tjKQXT2XyJcLqY1JMt2Eo0yv7ztQZDUvLlTJDFfzTj7xQ0bsW61H/qa/gA\n3ZS+tr/aXQKBgQC5E721UmP/OrLhaTd8TT/NBhjMAxrePikc6BYu7RrJLSBCQQVe\nU/roASj05ZgiW71zQHOCCGkguQSSKcEx9aihwehpVMs9nWyT1SpDW79XmXHD9GuM\nJOycH05OZZ9BbT3WnaxQF5wgLj9jU7xjV5fopA9eLDuO+acUbDV8hCAJiQKBgCgK\nokiTgUQ75FikM/FzLNku3EjT7240tRvJ+/cDMUqRJzvbifXreF/lTOAGquS3P5ka\n366KoiYZbd2w5GgilpXkdVlPOCaqc15G6hVTqe8b7oJLbY1+SE4C65HEaeDVNt0Q\n3CBc4kdw5LrDEqBE/Yxx1AAidincfEape8+EFO2BAoGBANuiohHRIyl7Ngv2mYrG\n4jRVNiqAVoOHx/+MDVMKC0SqvWB80bIIOPdjpMm1aCfLS/rfgqA9WReFfuUsygso\ndn1sVdfHYpQ8WAyHkDbECjPQXdE+pt6US68jvkqmPITUbyG9u0VfsZ+7MsG5QjHY\nc+fUpMkhcpyew+kRVc60rhB4\n-----END PRIVATE KEY-----\n"
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
     })
   });
 }
@@ -96,3 +97,93 @@ async function sendToNextDriver(courseId, drivers, index, courseData) {
 }
 
 module.exports = { dispatchCourse };
+
+// ─── DISPATCH COURSES PLANIFIÉES ─────────────────────────────────────────────
+
+async function dispatchScheduledCourse(courseId, courseData) {
+  const typeKey = courseData.vehicleType?.includes('Van') ? 'van' :
+                  courseData.vehicleType?.includes('Berline') ? 'cft' : 'std';
+
+  const snap = await db.collection('chauffeurs')
+    .where('status', '==', 'approved')
+    .get();
+
+  let drivers = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(d => {
+      const cats = d.rideCategories || { std: true, cft: false, van: false };
+      return typeKey === 'van' ? cats.van : typeKey === 'cft' ? cats.cft : cats.std;
+    })
+    .filter(d => d.pushToken);
+
+  console.log(`Dispatch planifié ${courseId}: ${drivers.length} chauffeurs notifiés`);
+
+  // Notifier TOUS les chauffeurs disponibles
+  for (const driver of drivers) {
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: driver.pushToken,
+        sound: 'default',
+        title: '📅 Course planifiée disponible !',
+        body: `📍 ${courseData.origin}\n🏁 ${courseData.destination}\n📅 ${courseData.scheduledDate} à ${courseData.scheduledTime}`,
+        data: { type: 'scheduled_course', courseId },
+        priority: 'high',
+      })
+    });
+  }
+
+  // Mettre la course en statut "dispatched_scheduled" — premier qui accepte l'aura
+  await db.collection('courses').doc(courseId).update({
+    status: 'dispatched_scheduled',
+    dispatchedAt: new Date(),
+    updatedAt: new Date()
+  });
+
+  // Si personne n'accepte dans 10 minutes → re-dispatcher
+  setTimeout(async () => {
+    try {
+      const snap = await db.collection('courses').doc(courseId).get();
+      const course = snap.data();
+      if (course?.status === 'dispatched_scheduled') {
+        console.log(`Aucun chauffeur pour course planifiée ${courseId} — re-dispatch`);
+        await dispatchScheduledCourse(courseId, courseData);
+      }
+    } catch(e) { console.log('Scheduled timeout error:', e); }
+  }, 600000); // 10 minutes
+}
+
+// Vérificateur périodique — lance toutes les minutes
+async function checkScheduledCourses() {
+  try {
+    const now = new Date();
+    const in30min = new Date(now.getTime() + 30 * 60 * 1000);
+
+    const snap = await db.collection('courses')
+      .where('scheduled', '==', true)
+      .where('status', '==', 'pending')
+      .get();
+
+    for (const doc of snap.docs) {
+      const course = doc.data();
+      if (!course.scheduledDate || !course.scheduledTime) continue;
+
+      // Parser la date/heure de la course
+      const [day, month, year] = course.scheduledDate.split('/');
+      const [hours, minutes] = course.scheduledTime.split(':');
+      const courseTime = new Date(year, month - 1, day, hours, minutes);
+
+      // Si la course est dans moins de 30 minutes
+      if (courseTime <= in30min && courseTime > now) {
+        console.log(`Course planifiée ${doc.id} dans moins de 30min — dispatch`);
+        await dispatchScheduledCourse(doc.id, course);
+      }
+    }
+  } catch(e) { console.log('checkScheduledCourses error:', e); }
+}
+
+// Lancer le vérificateur toutes les minutes
+setInterval(checkScheduledCourses, 60000);
+checkScheduledCourses(); // Lancer immédiatement au démarrage
+
+module.exports = { dispatchCourse, dispatchScheduledCourse, checkScheduledCourses };
