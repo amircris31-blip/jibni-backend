@@ -5,6 +5,8 @@ const cors = require('cors');
 const https = require('https');
 const { loadPromos, savePromos, validateCode } = require('./promos');
 const { notifyNewReservation } = require('./notifications');
+const { formatPrice, COUNTRY_CURRENCY } = require('./currency');
+const mypay = require('./payments/mypay');
 const app = express();
 
 app.use(cors({
@@ -147,6 +149,53 @@ app.post('/dispatch-course', async (req, res) => {
     dispatchCourse(courseId, courseData);
     res.json({ dispatching: true });
   } catch(e) { res.status(400).json({ error: e.message }); }
+});
+
+// ── Notification chauffeur (nouvelle course immédiate) ────────
+app.post('/notify-driver', async (req, res) => {
+  try {
+    const { pushToken, courseId, origin, destination, vehicleType, price, currency } = req.body;
+    if (!pushToken) return res.status(400).json({ error: 'pushToken manquant' });
+    // price arrive déjà formaté par l'app ("12.50 €" / "1 250 DA") ; sinon on le formate
+    const prix = typeof price === 'number' ? formatPrice(price, currency) : price;
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: pushToken,
+        sound: 'default',
+        title: '🚕 Nouvelle course !',
+        body: `De: ${origin}\nVers: ${destination}\n${vehicleType || ''} · ${prix || ''}`,
+        data: { type: 'new_course', courseId },
+        priority: 'high',
+      })
+    });
+    res.json({ sent: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Moyens de paiement par pays ───────────────────────────────
+// France : carte (Stripe) · Algérie : espèces + MyPay (CIB / Edahabia)
+const PAYMENT_METHODS = { FR: ['card'], DZ: ['cash', 'mypay'] };
+
+app.get('/api/payment-methods', (req, res) => {
+  const country = PAYMENT_METHODS[req.query.country] ? req.query.country : 'FR';
+  res.json({
+    country,
+    currency: COUNTRY_CURRENCY[country],
+    methods: PAYMENT_METHODS[country],
+    available: { card: country === 'FR', cash: country === 'DZ', mypay: country === 'DZ' && mypay.isConfigured() },
+  });
+});
+
+app.post('/api/mypay/checkout', async (req, res) => {
+  const { courseId, amount, currency } = req.body || {};
+  if (!mypay.isConfigured()) return res.status(503).json({ error: 'MyPay pas encore disponible, paiement en espèces au chauffeur.' });
+  if (!courseId || !amount || currency !== 'DZD') return res.status(400).json({ error: 'courseId, amount et currency=DZD requis' });
+  try {
+    const checkout = await mypay.createCheckout({ courseId, amount, currency });
+    res.json(checkout);
+  } catch(e) { res.status(502).json({ error: e.message }); }
 });
 
 // ── Codes Promo ───────────────────────────────────────────────

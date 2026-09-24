@@ -1,5 +1,6 @@
 require('dotenv').config();
 const admin = require('firebase-admin');
+const { courseCurrency, formatPrice } = require('./currency');
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -37,7 +38,9 @@ async function dispatchCourse(courseId, courseData) {
       const cats = d.rideCategories || { std: true, cft: false, van: false };
       return typeKey === 'van' ? cats.van : typeKey === 'cft' ? cats.cft : cats.std;
     })
-    .filter(d => d.latitude && d.longitude);
+    .filter(d => d.latitude && d.longitude)
+    // Même pays que la course (chauffeurs sans pays = France)
+    .filter(d => (d.country || 'FR') === (courseData.country || 'FR'));
 
   if (courseData.originLat && courseData.originLon) {
     drivers.sort((a, b) => {
@@ -77,7 +80,7 @@ async function sendToNextDriver(courseId, drivers, index, courseData) {
         to: driver.pushToken,
         sound: 'default',
         title: '🚕 Nouvelle course !',
-        body: `De: ${courseData.origin}\nVers: ${courseData.destination}\n${courseData.vehicleType} · ${courseData.price}€`,
+        body: `De: ${courseData.origin}\nVers: ${courseData.destination}\n${courseData.vehicleType} · ${formatPrice(courseData.price, courseCurrency(courseData))}`,
         data: { type: 'new_course', courseId },
         priority: 'high',
       })
@@ -113,7 +116,8 @@ async function dispatchScheduledCourse(courseId, courseData) {
       const cats = d.rideCategories || { std: true, cft: false, van: false };
       return typeKey === 'van' ? cats.van : typeKey === 'cft' ? cats.cft : cats.std;
     })
-    .filter(d => d.pushToken);
+    .filter(d => d.pushToken)
+    .filter(d => (d.country || 'FR') === (courseData.country || 'FR'));
 
   console.log(`Dispatch planifié ${courseId}: ${drivers.length} chauffeurs notifiés`);
 
@@ -126,7 +130,7 @@ async function dispatchScheduledCourse(courseId, courseData) {
         to: driver.pushToken,
         sound: 'default',
         title: '📅 Course planifiée disponible !',
-        body: `📍 ${courseData.origin}\n🏁 ${courseData.destination}\n📅 ${courseData.scheduledDate} à ${courseData.scheduledTime}`,
+        body: `📍 ${courseData.origin}\n🏁 ${courseData.destination}\n📅 ${courseData.scheduledDate} à ${courseData.scheduledTime}\n💰 ${formatPrice(courseData.price, courseCurrency(courseData))}`,
         data: { type: 'scheduled_course', courseId },
         priority: 'high',
       })
