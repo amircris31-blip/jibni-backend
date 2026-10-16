@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_report_loading_request" model="ir.actions.report">
+        <field name="name">Bon de chargement</field>
+        <field name="model">planning.loading_request</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">planning_loading_request.report_loading_request</field>
+        <field name="report_file">planning_loading_request.report_loading_request</field>
+        <field name="print_report_name">'Bon de chargement - %s' % object.name</field>
+        <field name="binding_model_id" ref="model_planning_loading_request"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <template id="report_loading_request">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Bon de chargement <span t-field="doc.name"/></h2>
+                        <div class="row mt-3 mb-3">
+                            <div class="col-6">
+                                <div><strong>Date :</strong> <span t-field="doc.date_planned"/></div>
+                                <div><strong>Véhicule :</strong> <span t-field="doc.vehicle_id"/></div>
+                                <div><strong>Chauffeur :</strong> <span t-field="doc.driver_id"/></div>
+                            </div>
+                            <div class="col-6">
+                                <div><strong>Entrepôt :</strong> <span t-field="doc.warehouse_id"/></div>
+                                <div><strong>Vers :</strong> <span t-field="doc.location_dest_id"/></div>
+                                <div><strong>Statut :</strong> <span t-field="doc.state"/></div>
+                            </div>
+                        </div>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Produit</th>
+                                    <th class="text-end">Demandé</th>
+                                    <th class="text-end">Préparé</th>
+                                    <th class="text-end">Chargé</th>
+                                    <th>Unité</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="doc.line_ids" t-as="line">
+                                    <td><span t-field="line.product_id"/></td>
+                                    <td class="text-end"><span t-field="line.qty_requested"/></td>
+                                    <td class="text-end"><span t-field="line.qty_prepared"/></td>
+                                    <td class="text-end"><span t-field="line.qty_loaded"/></td>
+                                    <td><span t-field="line.product_uom_id"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="row mt-5">
+                            <div class="col-6">Signature magasinier :</div>
+                            <div class="col-6">Signature chauffeur :</div>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

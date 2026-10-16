@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_loading_request_user,loading_request user,model_planning_loading_request,group_loading_user,1,1,1,0
+access_loading_request_manager,loading_request manager,model_planning_loading_request,group_loading_manager,1,1,1,1
+access_loading_request_line_user,loading_request_line user,model_planning_loading_request_line,group_loading_user,1,1,1,1
