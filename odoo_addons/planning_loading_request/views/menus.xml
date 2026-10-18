@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_loading_root" name="Chargements" web_icon="stock,static/description/icon.png" groups="group_loading_user" sequence="35"/>
+    <menuitem id="menu_loading_request" name="Demandes de chargement" parent="menu_loading_root" action="action_loading_request" sequence="10"/>
+</odoo>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="loading_request_view_tree" model="ir.ui.view">
+        <field name="name">planning.loading_request.tree</field>
+        <field name="model">planning.loading_request</field>
+        <field name="arch" type="xml">
+            <tree decoration-muted="state == 'cancel'" decoration-info="state in ('submitted', 'validated')" decoration-success="state == 'done'">
+                <field name="name"/>
+                <field name="date_planned"/>
+                <field name="user_id" widget="many2one_avatar_user"/>
+                <field name="vehicle_id"/>
+                <field name="driver_id"/>
+                <field name="warehouse_id" groups="stock.group_stock_multi_warehouses"/>
+                <field name="total_requested" sum="Total"/>
+                <field name="total_loaded" sum="Total"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="state" widget="badge" decoration-info="state in ('submitted', 'validated')" decoration-warning="state == 'preparing'" decoration-success="state in ('loaded', 'done')"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="loading_request_view_form" model="ir.ui.view">
+        <field name="name">planning.loading_request.form</field>
+        <field name="model">planning.loading_request</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_submit" type="object" string="Soumettre" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_validate" type="object" string="Valider" class="btn-primary" invisible="state != 'submitted'" groups="planning_loading_request.group_loading_manager"/>
+                    <button name="action_start_preparation" type="object" string="Lancer la préparation" class="btn-primary" invisible="state != 'validated'"/>
+                    <button name="action_load" type="object" string="Confirmer le chargement" class="btn-primary" invisible="state != 'preparing'"/>
+                    <button name="action_done" type="object" string="Clôturer" class="btn-primary" invisible="state != 'loaded'"/>
+                    <button name="action_draft" type="object" string="Remettre en brouillon" invisible="state not in ('submitted', 'cancel')"/>
+                    <button name="action_cancel" type="object" string="Annuler" invisible="state not in ('draft', 'submitted', 'validated', 'preparing')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,validated,preparing,loaded,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_picking" type="object" class="oe_stat_button" icon="fa-truck" invisible="not picking_id">
+                            <field name="picking_id" string="Transfert" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <field name="company_id" invisible="1"/>
+                    <group>
+                        <group>
+                            <field name="date_planned" readonly="state not in ('draft', 'submitted')"/>
+                            <field name="user_id" widget="many2one_avatar_user" readonly="state != 'draft'"/>
+                            <field name="vehicle_id" readonly="state not in ('draft', 'submitted', 'validated')"/>
+                            <field name="driver_id" readonly="state not in ('draft', 'submitted', 'validated')"/>
+                        </group>
+                        <group>
+                            <field name="warehouse_id" readonly="state != 'draft'" groups="stock.group_stock_multi_warehouses"/>
+                            <field name="location_id" readonly="state != 'draft'" groups="stock.group_stock_multi_locations"/>
+                            <field name="location_dest_id" readonly="state not in ('draft', 'submitted')"/>
+                            <field name="validated_by_id" invisible="not validated_by_id"/>
+                            <field name="company_id" groups="base.group_multi_company" readonly="state != 'draft'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Produits" name="lines">
+                            <field name="line_ids" readonly="state not in ('draft', 'submitted', 'preparing')">
+                                <tree editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="state" column_invisible="True"/>
+                                    <field name="company_id" column_invisible="True"/>
+                                    <field name="product_id" readonly="state not in ('draft', 'submitted')"/>
+                                    <field name="qty_available" decoration-danger="qty_available &lt; qty_requested"/>
+                                    <field name="qty_requested" readonly="state not in ('draft', 'submitted')"/>
+                                    <field name="product_uom_id" groups="uom.group_uom" readonly="state not in ('draft', 'submitted')"/>
+                                    <field name="qty_prepared" column_invisible="parent.state in ('draft', 'submitted', 'validated')" readonly="state != 'preparing'"/>
+                                    <field name="qty_loaded" column_invisible="parent.state not in ('loaded', 'done')"/>
+                                </tree>
+                            </field>
+                            <group class="oe_subtotal_footer">
+                                <field name="total_requested"/>
+                                <field name="total_loaded" invisible="state not in ('loaded', 'done')"/>
+                            </group>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="note"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <div class="oe_chatter">
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids"/>
+                </div>
+            </form>
+        </field>
+    </record>
+
+    <record id="loading_request_view_search" model="ir.ui.view">
+        <field name="name">planning.loading_request.search</field>
+        <field name="model">planning.loading_request</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="vehicle_id"/>
+                <field name="driver_id"/>
+                <field name="user_id"/>
+                <field name="line_ids" string="Produit" filter_domain="[('line_ids.product_id', 'ilike', self)]"/>
+                <filter name="my" string="Mes demandes" domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <filter name="to_validate" string="À valider" domain="[('state', '=', 'submitted')]"/>
+                <filter name="to_load" string="À charger" domain="[('state', 'in', ('validated', 'preparing'))]"/>
+                <filter name="today" string="Aujourd'hui" domain="[('date_planned', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0, 0, 0))), ('date_planned', '&lt;', datetime.datetime.combine(context_today() + datetime.timedelta(days=1), datetime.time(0, 0, 0)))]"/>
+                <filter name="date_planned" string="Date de chargement" date="date_planned"/>
+                <group expand="0" string="Regrouper par">
+                    <filter name="group_state" string="Statut" context="{'group_by': 'state'}"/>
+                    <filter name="group_vehicle" string="Véhicule" context="{'group_by': 'vehicle_id'}"/>
+                    <filter name="group_driver" string="Chauffeur" context="{'group_by': 'driver_id'}"/>
+                    <filter name="group_date" string="Jour" context="{'group_by': 'date_planned:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="loading_request_view_calendar" model="ir.ui.view">
+        <field name="name">planning.loading_request.calendar</field>
+        <field name="model">planning.loading_request</field>
+        <field name="arch" type="xml">
+            <calendar date_start="date_planned" color="vehicle_id" mode="week" quick_create="0" event_open_popup="0">
+                <field name="vehicle_id" filters="1"/>
+                <field name="driver_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <record id="loading_request_view_kanban" model="ir.ui.view">
+        <field name="name">planning.loading_request.kanban</field>
+        <field name="model">planning.loading_request</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" group_create="0" group_delete="0" group_edit="0" records_draggable="0">
+                <field name="name"/>
+                <field name="date_planned"/>
+                <field name="vehicle_id"/>
+                <field name="driver_id"/>
+                <field name="total_requested"/>
+                <field name="user_id"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_global_click">
+                            <strong><field name="name"/></strong>
+                            <div><field name="vehicle_id"/> — <field name="driver_id"/></div>
+                            <div class="text-muted"><field name="date_planned"/></div>
+                            <div class="o_kanban_record_bottom">
+                                <div class="oe_kanban_bottom_left"><field name="total_requested"/> unités</div>
+                                <div class="oe_kanban_bottom_right"><field name="user_id" widget="many2one_avatar_user"/></div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="action_loading_request" model="ir.actions.act_window">
+        <field name="name">Demandes de chargement</field>
+        <field name="res_model">planning.loading_request</field>
+        <field name="view_mode">tree,form,kanban,calendar</field>
+        <field name="context">{'search_default_my': 0}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Créer une demande de chargement</p>
+            <p>Indiquez le camion, la date et les produits à charger depuis l'entrepôt.</p>
+        </field>
+    </record>
+</odoo>
