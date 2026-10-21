@@ -5,15 +5,22 @@ const cors = require('cors');
 const https = require('https');
 const { loadPromos, savePromos, validateCode } = require('./promos');
 const { notifyNewReservation } = require('./notifications');
+const { auditMiddleware, requireRole, deleteGuard, listJournal, DELETE_ROLES } = require('./audit');
 const app = express();
 
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Accept', 'x-admin-password']
+  allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'x-admin-password', 'x-directeur-password']
 }));
 app.options('*', cors());
 app.use(express.json());
+
+// ── Journal + verrou suppression ──────────────────────────────
+// Toute action est enregistrée dans la collection Firestore "journal".
+// Toute requête DELETE est refusée sauf pour l'administrateur ou le directeur.
+app.use(auditMiddleware);
+app.use(deleteGuard);
 
 // ── Health ────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({
@@ -150,15 +157,7 @@ app.post('/dispatch-course', async (req, res) => {
 });
 
 // ── Codes Promo ───────────────────────────────────────────────
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'jibni-admin-2025';
-
-function adminAuth(req, res, next) {
-  const pwd = req.headers['x-admin-password'];
-  if (!pwd || pwd !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Non autorise' });
-  }
-  next();
-}
+const adminAuth = requireRole('admin', 'directeur');
 
 // GET public : valider un code
 app.get('/api/promo/validate', (req, res) => {
@@ -202,6 +201,7 @@ app.post('/api/admin/promos', adminAuth, (req, res) => {
 
   promos.push(promo);
   savePromos(promos);
+  req.auditDetails = { entity: 'promo', created: promo };
   res.status(201).json(promo);
 });
 
@@ -211,6 +211,7 @@ app.put('/api/admin/promos/:id', adminAuth, (req, res) => {
   const idx = promos.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Code introuvable' });
 
+  const before = promos[idx];
   promos[idx] = {
     ...promos[idx],
     ...(req.body.code ? { code: req.body.code.toUpperCase().replace(/\s+/g, '') } : {}),
@@ -221,16 +222,29 @@ app.put('/api/admin/promos/:id', adminAuth, (req, res) => {
   };
 
   savePromos(promos);
+  req.auditDetails = { entity: 'promo', before, after: promos[idx] };
   res.json(promos[idx]);
 });
 
 // DELETE admin : supprimer un code
-app.delete('/api/admin/promos/:id', adminAuth, (req, res) => {
+app.delete('/api/admin/promos/:id', requireRole(...DELETE_ROLES), (req, res) => {
   const promos = loadPromos();
-  const filtered = promos.filter(p => p.id !== req.params.id);
-  if (filtered.length === promos.length) return res.status(404).json({ error: 'Code introuvable' });
-  savePromos(filtered);
+  const deleted = promos.find(p => p.id === req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'Code introuvable' });
+  savePromos(promos.filter(p => p.id !== req.params.id));
+  // Copie complète de l'élément supprimé conservée dans le journal
+  req.auditDetails = { entity: 'promo', deleted };
   res.json({ success: true });
+});
+
+// ── Journal (lecture seule, aucune route de modification) ─────
+app.get('/api/admin/journal', requireRole('admin', 'directeur'), async (req, res) => {
+  try {
+    const { limit, before, role, method, actorId } = req.query;
+    res.json(await listJournal({ limit, before, role, method, actorId }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Notifications Auto ────────────────────────────────────────
